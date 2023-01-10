@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using studious_enigma.Models;
@@ -11,6 +12,7 @@ namespace studious_enigma.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class ArticlesController : ControllerBase
     {
         private static List<Article> articles = new();
