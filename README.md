@@ -8,7 +8,9 @@ Web API with JWT Authentication and ASP.NET Core Identity
     git clone https://github.com/dotnewt/studious-enigma.git
 ```
 
-2. Add Migrations
+2. Delete Migrations folder
+
+3. Add Migrations
 ```console
     dotnet ef migrations add InitialCreate -c AuthDbContext -o Migrations/AuthMigrations
 ```
@@ -16,7 +18,7 @@ Web API with JWT Authentication and ASP.NET Core Identity
     dotnet ef migrations add InitialCreate -c MemoryCryptContext -o Migrations/MemoryCryptMigrations
 ```
 
-3. Update DB
+4. Update DB
 ```console
     dotnet ef database update -c AuthDbContext
 ```
@@ -25,7 +27,7 @@ Web API with JWT Authentication and ASP.NET Core Identity
 ```
 
 
-4. Run project:
+5. Run project:
 ```console
     cd  studious-enigma
     dotnet run 
