@@ -6,17 +6,6 @@
 
 START TRANSACTION;
 
-CREATE TABLE Articles
-(
-    Id UNIQUEIDENTIFIER primary key Default(NewId()),
-    Title varchar,
-    Author varchar,
-    Content varchar,
-    Views int,
-    UpVotes int
-)
-
-
 CREATE TABLE "AspNetRoles" (
     "Id" text NOT NULL,
     "Name" character varying(256) NULL,
@@ -29,12 +18,11 @@ CREATE TABLE "AspNetUsers" (
     "Id" text NOT NULL,
     "DisplayName" text NOT NULL,
     "DateOfBirth" timestamp with time zone NULL,
-    "Address1" text NOT NULL,
-    "Address" text NOT NULL,
-    "City" text NOT NULL,
-    "State" text NOT NULL,
-    "Country" text NOT NULL,
-    "RefreshToken" text NOT NULL,
+    "Address" text NULL,
+    "City" text NULL,
+    "State" text NULL,
+    "Country" text NULL,
+    "RefreshToken" text NULL,
     "UserName" character varying(256) NULL,
     "NormalizedUserName" character varying(256) NULL,
     "Email" character varying(256) NULL,
@@ -111,7 +99,7 @@ CREATE INDEX "EmailIndex" ON "AspNetUsers" ("NormalizedEmail");
 CREATE UNIQUE INDEX "UserNameIndex" ON "AspNetUsers" ("NormalizedUserName");
 
 INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-VALUES ('20230110211610_MyCommand1', '7.0.2');
+VALUES ('20230111203518_InitialCreate', '7.0.2');
 
 COMMIT;
 
