@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
+using studious_enigma.Data;
 using studious_enigma.Models;
 
 namespace studious_enigma.Controllers
@@ -15,36 +16,39 @@ namespace studious_enigma.Controllers
     [Authorize]
     public class ArticlesController : ControllerBase
     {
-        private static List<Article> articles = new();
+        private MemoryCryptContext _context;
         private readonly ILogger<ArticlesController> _logger;
 
-        public ArticlesController(ILogger<ArticlesController> logger)
+        public ArticlesController(ILogger<ArticlesController> logger, MemoryCryptContext context)
         {
             _logger = logger;
+            _context = context;
         }
 
         [HttpPost]
         public ActionResult<Article> InsertArticle(Article article)
         {
-            article.Id = Guid.NewGuid().ToString();
-            articles.Add(article);
+            article.Id = Guid.NewGuid();
+            _context.Articles.Add(article);
+            _context.SaveChanges();
             return CreatedAtAction(nameof(GetArticles), new { id = article.Id }, article);
         }
 
         [HttpGet]
         public ActionResult<IEnumerable<Article>> GetArticles()
         {
-            return Ok(articles);
+            return Ok(_context.Articles.ToList());
         }
 
         [HttpGet("{id}")]
         public ActionResult<Article> GetArticles(string id)
         {
-            var article = articles.FirstOrDefault(a => a.Id.Equals(id));
+            var article = _context.Articles.FirstOrDefault(a => a.Id.Equals(id));
             if (article == null)
             {
                 return NotFound();
             }
+
 
             return Ok(article);
         }
@@ -52,12 +56,12 @@ namespace studious_enigma.Controllers
         [HttpPut("{id}")]
         public ActionResult<Article> UpdateArticle(string id, Article article)
         {
-            if (id != article.Id)
+            if (id != article.Id.ToString())
             {
                 return BadRequest();
             }
 
-            var articleToUpdate = articles.FirstOrDefault(a => a.Id.Equals(id));
+            var articleToUpdate = _context.Articles.FirstOrDefault(a => a.Id.Equals(id));
 
             if (articleToUpdate == null)
             {
@@ -76,14 +80,14 @@ namespace studious_enigma.Controllers
         [HttpDelete("{id}")]
         public ActionResult DeleteArticle(string id)
         {
-            var articleToDelete = articles.FirstOrDefault(a => a.Id.Equals(id));
+            var articleToDelete = _context.Articles.FirstOrDefault(a => a.Id.Equals(id));
 
             if (articleToDelete == null)
             {
                 return NotFound();
             }
 
-            articles.Remove(articleToDelete);
+            _context.Articles.Remove(articleToDelete);
 
             return NoContent();
         }

@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using studious_enigma.Models;
@@ -18,16 +19,13 @@ namespace studious_enigma.Controllers
     [Route("api/[controller]")]
     public class AuthController : ControllerBase
     {
-        public static List<User> tempUserDb = new List<User>{
-            new User{UserId="abc123",UserName="John", DisplayName="BilboBaggins", Email="john@abc.com", Password="john@123" },
-            new User{UserId="def456",UserName="Jane", DisplayName="Galadriel", Email="jane@xyz.com", Password="jane1990" }
-        };
-
         public IConfiguration _configuration;
+        public UserManager<User> _userManager;
 
-        public AuthController(IConfiguration configuration)
+        public AuthController(IConfiguration configuration, UserManager<User> userManager)
         {
             _configuration = configuration;
+            _userManager = userManager;
         }
 
         [HttpPost("login")]
@@ -38,16 +36,20 @@ namespace studious_enigma.Controllers
                 return BadRequestErrorMessage();
             }
 
-            var user = await GetUser(request.Email, request.Password);
+            var user = await _userManager.FindByEmailAsync(request.Email);
+            var isAuthorized = user != null && await _userManager.CheckPasswordAsync(user, request.Password);
 
-            if (user != null)
+
+            if (isAuthorized)
             {
                 var authResponse = await GetTokens(user);
+                user.RefreshToken = authResponse.RefreshToken;
+                await _userManager.UpdateAsync(user);
                 return Ok(authResponse);
             }
             else
             {
-                return BadRequest("Invalid credentials");
+                return Unauthorized("Invalid credentials");
             }
         }
 
@@ -59,18 +61,23 @@ namespace studious_enigma.Controllers
                 return BadRequestErrorMessage();
             }
 
-            var user = await GetUserByRefreshToken(request.RefreshToken);
+            var principal = GetPrincipalFromExpiredToken(request.AccessToken);
+            var userEmail = principal.FindFirstValue("Email");
 
-            if (user == null)
+            var user = !string.IsNullOrEmpty(userEmail) ? await _userManager.FindByEmailAsync(userEmail) : null;
+            if (user == null || user.RefreshToken != request.RefreshToken)
             {
                 return BadRequest("Invalid refresh token");
             }
 
             var response = await GetTokens(user);
+            user.RefreshToken = response.RefreshToken;
+            await _userManager.UpdateAsync(user);
             return Ok(response);
         }
 
         [HttpPost("revoke")]
+        [Authorize]
         public async Task<IActionResult> Revoke(RevokeRequest request)
         {
             if (!ModelState.IsValid)
@@ -78,18 +85,19 @@ namespace studious_enigma.Controllers
                 return BadRequestErrorMessage();
             }
 
-            //check if any user with this refresh token exists
-            var user = await GetUserByRefreshToken(request.RefreshToken);
-            if (user == null)
+            var userEmail = this.HttpContext.User.FindFirstValue("Email");
+
+            var user = !string.IsNullOrEmpty(userEmail) ? await _userManager.FindByEmailAsync(userEmail) : null;
+            if (user == null || user.RefreshToken != request.RefreshToken)
             {
                 return BadRequest("Invalid refresh token");
             }
 
-            //remove refresh token 
             user.RefreshToken = null;
-
+            await _userManager.UpdateAsync(user);
             return Ok("Refresh token is revoked");
         }
+
 
         [HttpPost("register")]
         public async Task<IActionResult> Register(RegisterRequest registerRequest)
@@ -99,48 +107,63 @@ namespace studious_enigma.Controllers
                 return BadRequestErrorMessage();
             }
 
-            var isEmailAlreadyRegistered = await GetUserByEmail(registerRequest.Email) != null;
+            var isEmailAlreadyRegistered = await _userManager.FindByEmailAsync(registerRequest.Email) != null;
+            var isUserNameAlreadyRegistered = await _userManager.FindByNameAsync(registerRequest.UserName) != null;
 
             if (isEmailAlreadyRegistered)
             {
                 return Conflict($"Email Id {registerRequest.Email} is already registered");
             }
 
-            await AddUser(new User
+            if (isUserNameAlreadyRegistered)
+            {
+                return Conflict($"Username {registerRequest.UserName} is already registered");
+            }
+
+            var newUser = new User
             {
                 Email = registerRequest.Email,
                 UserName = registerRequest.UserName,
-                Password = registerRequest.Password
-            });
+                DisplayName = registerRequest.DisplayName
+            };
 
-            return Ok("User created successfully");
+            var result = await _userManager.CreateAsync(newUser, registerRequest.Password);
+
+            if (result.Succeeded)
+            {
+                return Ok("User created successfully");
+            }
+            else
+            {
+                return StatusCode(500, result.Errors.Select(e => new { Msg = e.Code, Desc = e.Description }).ToList());
+            }
         }
 
-        private async Task<User> GetUserByEmail(string email)
+        private ClaimsPrincipal GetPrincipalFromExpiredToken(string token)
         {
-            return await Task.FromResult(tempUserDb.FirstOrDefault(u => u.Email == email));
-        }
-
-        private async Task<User> AddUser(User newUser)
-        {
-            newUser.UserId = $"user{DateTime.Now.ToString("hhmmss")}";
-            tempUserDb.Add(newUser);
-            return newUser;
-        }
-
-        private async Task<User> GetUserByRefreshToken(string refreshToken)
-        {
-            return await Task.FromResult(tempUserDb.FirstOrDefault(u => u.RefreshToken == refreshToken));
+            var tokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateAudience = false,
+                ValidateIssuer = false,
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["token:key"])),
+                ValidateLifetime = false
+            };
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var principal = tokenHandler.ValidateToken(token, tokenValidationParameters, out SecurityToken securityToken);
+            var jwtSecurityToken = securityToken as JwtSecurityToken;
+            if (jwtSecurityToken == null || !jwtSecurityToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.InvariantCultureIgnoreCase))
+                throw new SecurityTokenException("Invalid token");
+            return principal;
         }
 
         private async Task<AuthResponse> GetTokens(User user)
         {
-            //create claims details based on the user information
             var claims = new[]{
                             new Claim(JwtRegisteredClaimNames.Sub, _configuration["token:subject"]),
                             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
                             new Claim(JwtRegisteredClaimNames.Iat, DateTime.UtcNow.ToString()),
-                            new Claim("UserId", user.UserId),
+                            new Claim("Id", user.Id),
                             new Claim("UserName", user.UserName),
                             new Claim("Email", user.Email)
                 };
@@ -166,7 +189,7 @@ namespace studious_enigma.Controllers
         private string GetRefreshToken()
         {
             var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
-            var tokesIsUnique = !tempUserDb.Any(t => t.RefreshToken == token);
+            var tokesIsUnique = !_userManager.Users.Any(t => t.RefreshToken == token);
 
             if (!tokesIsUnique)
             {
@@ -174,19 +197,6 @@ namespace studious_enigma.Controllers
             }
 
             return token;
-        }
-
-        [HttpGet("tokenValidate")]
-        [Authorize]
-        public async Task<IActionResult> TokenValidate()
-        {
-            //This endpoint is created so any user can validate their token
-            return Ok("Token is valid");
-        }
-
-        private async Task<User> GetUser(string email, string password)
-        {
-            return await Task.FromResult(tempUserDb.FirstOrDefault(u => u.Email == email && u.Password == password));
         }
 
         private IActionResult BadRequestErrorMessage()

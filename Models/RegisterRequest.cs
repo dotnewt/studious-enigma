@@ -22,5 +22,8 @@ namespace studious_enigma.Models
 
         [Compare(nameof(Password))]
         public string ConfirmPassword { get; set; }
+
+         [Required]
+    public string DisplayName { get; set; }
     }
 }
